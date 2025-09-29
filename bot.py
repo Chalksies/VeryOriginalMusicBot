@@ -23,7 +23,7 @@ def save_data(data):
         json.dump(data, f, indent=2)
 
 def fetch_youtube_title(url: str) -> str:
-    ydl_opts = {"quiet": True, "skip_download": True}
+    ydl_opts = {"quiet": False, "skip_download": True}
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
             info = ydl.extract_info(url, download=False)
