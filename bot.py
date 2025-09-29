@@ -142,7 +142,7 @@ async def submit(interaction: discord.Interaction, url: str):
     data[channel_id]["round"]["submissions"][str(interaction.user.id)] = {"url": url, "title": title}
     save_data(data)
 
-    await interaction.edit_original_response(content=f"Submission received: {title} ({url})")
+    await interaction.edit_original_response(content=f"Submission received: [{title}]({url})")
 
 @bot.tree.command(description="Show all submissions for the current round")
 async def show_submissions(interaction: discord.Interaction):
@@ -162,8 +162,14 @@ async def show_submissions(interaction: discord.Interaction):
         title=f"Submissions for {data[channel_id]['round']['theme']}",
         color=discord.Color.blue()
     )
-    for i, (player_id, url) in enumerate(submissions.items(), start=1):
-        embed.add_field(name=f"{i}.", value=url, inline=False)
+    for i, (player_id, sub) in enumerate(submissions.items(), start=1):
+        if isinstance(sub, dict):
+            url = sub.get("url", "")
+            title = sub.get("title", url)
+        else:
+            url = sub
+            title = url
+        embed.add_field(name=f"{i}.", value=f"[{title}]({url})", inline=False)
 
     await interaction.response.send_message(embed=embed)
 
