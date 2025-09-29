@@ -139,7 +139,7 @@ async def submit(interaction: discord.Interaction, url: str):
         await interaction.response.send_message("Only YouTube or YouTube Music links are allowed.", ephemeral=True)
         return
 
-    await interaction.response.defer(thinking=True)
+    await interaction.response.defer(thinking=True, ephemeral=True)
 
     loop = asyncio.get_running_loop()
     title = await loop.run_in_executor(None, fetch_youtube_title, url)
@@ -148,7 +148,7 @@ async def submit(interaction: discord.Interaction, url: str):
     data[channel_id]["round"]["submissions"][str(interaction.user.id)] = {"url": url, "title": title}
     save_data(data)
 
-    await interaction.edit_original_response(content=f"Submission received: [{title}]({url})", ephemeral=True)
+    await interaction.edit_original_response(content=f"Submission received: [{title}]({url})")
 
 @bot.tree.command(description="Show all submissions for the current round")
 async def show_submissions(interaction: discord.Interaction):
