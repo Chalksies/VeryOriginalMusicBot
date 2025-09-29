@@ -24,12 +24,13 @@ def save_data(data):
 
 def fetch_youtube_title(url: str) -> str:
     ydl_opts = {"quiet": False, "skip_download": True}
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        try:
+    try:
+        import yt_dlp
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             return info.get("title", "Unknown Title")
-        except Exception:
-            return "Unknown Title"
+    except Exception:
+        return "Unknown Title"
 
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -116,6 +117,8 @@ async def start_round(interaction: discord.Interaction, theme: str):
 @bot.tree.command(description="Submit your song for the current round")
 @app_commands.describe(url="YouTube or YouTube Music link")
 async def submit(interaction: discord.Interaction, url: str):
+    import functools
+    import asyncio
     data = load_data()
     channel_id = str(interaction.channel_id)
     player_id = str(interaction.user.id)
@@ -131,8 +134,10 @@ async def submit(interaction: discord.Interaction, url: str):
     if not ("youtube.com" in url or "youtu.be" in url or "music.youtube.com" in url):
         await interaction.response.send_message("Only YouTube or YouTube Music links are allowed.", ephemeral=True)
         return
-    else:
-        title = fetch_youtube_title(url)
+
+    # Fetch title asynchronously to avoid blocking event loop
+    loop = asyncio.get_running_loop()
+    title = await loop.run_in_executor(None, functools.partial(fetch_youtube_title, url))
 
     data[channel_id]["round"]["submissions"][str(interaction.user.id)] = {"url": url, "title": title}
     save_data(data)
