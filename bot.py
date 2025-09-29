@@ -107,7 +107,8 @@ async def start_round(interaction: discord.Interaction, theme: str):
     league["round"] = {
         "theme": theme,
         "submissions": {},
-        "votes": {}
+        "votes": {},
+        "phase": "submission"  # New field to track round phase
     }
     save_data(data)
     await interaction.response.send_message(
@@ -123,6 +124,11 @@ async def submit(interaction: discord.Interaction, url: str):
 
     if channel_id not in data or data[channel_id]["round"] is None:
         await interaction.response.send_message("No active round in this channel.", ephemeral=True)
+        return
+
+    round_data = data[channel_id]["round"]
+    if round_data.get("phase") != "submission":
+        await interaction.response.send_message("Submissions are only allowed during the submission phase.", ephemeral=True)
         return
 
     if player_id not in data[channel_id]["players"]:
@@ -142,7 +148,7 @@ async def submit(interaction: discord.Interaction, url: str):
     data[channel_id]["round"]["submissions"][str(interaction.user.id)] = {"url": url, "title": title}
     save_data(data)
 
-    await interaction.edit_original_response(content=f"Submission received: [{title}]({url})")
+    await interaction.edit_original_response(content=f"Submission received: [{title}]({url})", ephemeral=True)
 
 @bot.tree.command(description="Show all submissions for the current round")
 async def show_submissions(interaction: discord.Interaction):
@@ -153,13 +159,18 @@ async def show_submissions(interaction: discord.Interaction):
         await interaction.response.send_message("No active round in this channel.", ephemeral=True)
         return
 
-    submissions = data[channel_id]["round"]["submissions"]
+    round_data = data[channel_id]["round"]
+    if round_data.get("phase") != "voting":
+        await interaction.response.send_message("Submissions can only be viewed during the voting phase.", ephemeral=True)
+        return
+
+    submissions = round_data["submissions"]
     if not submissions:
         await interaction.response.send_message("No submissions yet.")
         return
 
     embed = discord.Embed(
-        title=f"Submissions for {data[channel_id]['round']['theme']}",
+        title=f"Submissions for {round_data['theme']}",
         color=discord.Color.blue()
     )
     for i, (player_id, sub) in enumerate(submissions.items(), start=1):
@@ -173,6 +184,29 @@ async def show_submissions(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed)
 
+# Add command to move round to voting phase
+@bot.tree.command(description="Move the current round to voting phase")
+async def start_voting(interaction: discord.Interaction):
+    data = load_data()
+    channel_id = str(interaction.channel_id)
+
+    if channel_id not in data or data[channel_id]["round"] is None:
+        await interaction.response.send_message("No active round in this channel.", ephemeral=True)
+        return
+
+    round_data = data[channel_id]["round"]
+    if round_data.get("phase") != "submission":
+        await interaction.response.send_message("You can only start voting from the submission phase.", ephemeral=True)
+        return
+
+    if not round_data["submissions"]:
+        await interaction.response.send_message("No submissions to vote on!", ephemeral=True)
+        return
+
+    round_data["phase"] = "voting"
+    save_data(data)
+    await interaction.response.send_message("Voting phase started! Use /show_submissions to view and /vote to vote.")
+
 @bot.tree.command(description="Vote for a submission")
 @app_commands.describe(number="The submission number you want to vote for")
 async def vote(interaction: discord.Interaction, number: int):
@@ -184,7 +218,12 @@ async def vote(interaction: discord.Interaction, number: int):
         await interaction.response.send_message("No active round in this channel.", ephemeral=True)
         return
 
-    submissions = list(data[channel_id]["round"]["submissions"].items())
+    round_data = data[channel_id]["round"]
+    if round_data.get("phase") != "voting":
+        await interaction.response.send_message("Voting is only allowed during the voting phase.", ephemeral=True)
+        return
+
+    submissions = list(round_data["submissions"].items())
     if number < 1 or number > len(submissions):
         await interaction.response.send_message("Invalid submission number.", ephemeral=True)
         return
@@ -194,7 +233,7 @@ async def vote(interaction: discord.Interaction, number: int):
         await interaction.response.send_message("You cannot vote for yourself.", ephemeral=True)
         return
 
-    data[channel_id]["round"]["votes"][player_id] = chosen_player
+    round_data["votes"][player_id] = chosen_player
     save_data(data)
 
     await interaction.response.send_message(f"You voted for submission #{number}")
