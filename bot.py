@@ -36,6 +36,7 @@ def fetch_youtube_info(url: str) -> dict:
             return {"title": "Unknown Title", "thumbnail": None}
 
 intents = discord.Intents.default()
+intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
