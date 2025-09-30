@@ -45,8 +45,8 @@ async def on_ready():
     print(f"Logged in as {bot.user}")
 
 @bot.tree.command(description="Create a new league in this channel")
-@app_commands.describe(rounds="Number of rounds in this league")
-async def create_league(interaction: discord.Interaction, rounds: int):
+@app_commands.describe(rounds="Number of rounds in this league", votes_per_player="Number of votes each player can cast per round")
+async def create_league(interaction: discord.Interaction, rounds: int, votes_per_player: int):
     data = load_data()
     channel_id = str(interaction.channel_id)
 
@@ -63,7 +63,8 @@ async def create_league(interaction: discord.Interaction, rounds: int):
         "round": None,
         "current_round": 0,
         "max_rounds": rounds,
-        "scores": {}
+        "scores": {},
+        "votes_per_player": votes_per_player
     }
     save_data(data)
 
@@ -205,6 +206,7 @@ async def show_submissions(interaction: discord.Interaction):
 async def start_voting(interaction: discord.Interaction):
     data = load_data()
     channel_id = str(interaction.channel_id)
+    votes_per_player = data[channel_id]["votes_per_player"]
 
     if channel_id not in data or data[channel_id]["round"] is None:
         await interaction.response.send_message("No active round in this channel.", ephemeral=True)
@@ -221,14 +223,15 @@ async def start_voting(interaction: discord.Interaction):
 
     round_data["phase"] = "voting"
     save_data(data)
-    await interaction.response.send_message("Voting phase started! Use /show_submissions to view and /vote to vote.")
+    await interaction.response.send_message(f"Voting phase started! Use /show_submissions to view and /vote to vote.\n Total votes per player: {votes_per_player}")
 
-@bot.tree.command(description="Vote for a submission")
-@app_commands.describe(number="The submission number you want to vote for")
-async def vote(interaction: discord.Interaction, number: int):
+@bot.tree.command(description=f"Vote for a submission (you have multiple votes per round)")
+@app_commands.describe(number="The submission number you want to vote for", amount="The number of votes to allocate to this submission")
+async def vote(interaction: discord.Interaction, number: int, amount: int = 1):
     data = load_data()
     channel_id = str(interaction.channel_id)
     player_id = str(interaction.user.id)
+    votes_per_player = data[channel_id]["votes_per_player"]
 
     if channel_id not in data or data[channel_id]["round"] is None:
         await interaction.response.send_message("No active round in this channel.", ephemeral=True)
@@ -244,15 +247,30 @@ async def vote(interaction: discord.Interaction, number: int):
         await interaction.response.send_message("Invalid submission number.", ephemeral=True)
         return
 
+    if amount < 1 or amount > votes_per_player:
+        await interaction.response.send_message(f"You can only allocate between 1 and {votes_per_player} votes per submission.", ephemeral=True)
+        return
+
     chosen_player, _ = submissions[number - 1]
     if chosen_player == player_id:
         await interaction.response.send_message("You cannot vote for yourself.", ephemeral=True)
         return
 
-    round_data["votes"][player_id] = chosen_player
+    if "votes" not in round_data:
+        round_data["votes"] = {}
+    if player_id not in round_data["votes"]:
+        round_data["votes"][player_id] = {}
+
+    player_votes = round_data["votes"][player_id]
+    current_total = sum(player_votes.values())
+    if current_total + amount > votes_per_player:
+        await interaction.response.send_message(f"You only have {votes_per_player - current_total} votes left this round.", ephemeral=True)
+        return
+
+    player_votes[chosen_player] = player_votes.get(chosen_player, 0) + amount
     save_data(data)
 
-    await interaction.response.send_message(f"You voted for submission #{number}")
+    await interaction.response.send_message(f"You gave {amount} vote(s) to submission #{number}. You have {votes_per_player - (current_total + amount)} votes left this round.")
 
 
 @bot.tree.command(description="End the round and show results")
@@ -265,11 +283,12 @@ async def end_round(interaction: discord.Interaction):
         return
 
     league = data[channel_id]
-    votes = league["round"]["votes"]
 
+    votes = league["round"]["votes"]
     tally = {}
-    for voter, voted_for in votes.items():
-        tally[voted_for] = tally.get(voted_for, 0) + 1
+    for voter, vote_dict in votes.items():
+        for target, count in vote_dict.items():
+            tally[target] = tally.get(target, 0) + count
 
     for player_id, count in tally.items():
         league["scores"][player_id] = league["scores"].get(player_id, 0) + count
