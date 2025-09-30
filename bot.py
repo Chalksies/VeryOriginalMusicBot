@@ -111,7 +111,7 @@ async def start_round(interaction: discord.Interaction, theme: str):
         "theme": theme,
         "submissions": {},
         "votes": {},
-        "phase": "submission"  # New field to track round phase
+        "phase": "submission" 
     }
     save_data(data)
     await interaction.response.send_message(
@@ -200,7 +200,6 @@ async def show_submissions(interaction: discord.Interaction):
         else:
             await interaction.followup.send(embeds=batch)
 
-# Add command to move round to voting phase
 @bot.tree.command(description="Move the current round to voting phase")
 async def start_voting(interaction: discord.Interaction):
     data = load_data()
