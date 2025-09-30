@@ -50,6 +50,10 @@ async def create_league(interaction: discord.Interaction, rounds: int, votes_per
     data = load_data()
     channel_id = str(interaction.channel_id)
 
+    if (interaction.user.guild_permissions.manage_messages == False) and (interaction.user.id != 616662810205749288):
+        await interaction.response.send_message("Only users with permission can create a league.", ephemeral=True)
+        return
+
     if channel_id in data:
         await interaction.response.send_message("A league already exists in this channel!", ephemeral=True)
         return
@@ -94,6 +98,10 @@ async def join_league(interaction: discord.Interaction):
 async def start_round(interaction: discord.Interaction, theme: str):
     data = load_data()
     channel_id = str(interaction.channel_id)
+
+    if (interaction.user.guild_permissions.manage_messages == False) and (interaction.user.id != 616662810205749288):
+        await interaction.response.send_message("Only users with permission can start a round.", ephemeral=True)
+        return
 
     if channel_id not in data:
         await interaction.response.send_message("No league in this channel. Use /create_league first.", ephemeral=True)
@@ -208,6 +216,10 @@ async def start_voting(interaction: discord.Interaction):
     channel_id = str(interaction.channel_id)
     votes_per_player = data[channel_id]["votes_per_player"]
 
+    if (interaction.user.guild_permissions.manage_messages == False) and (interaction.user.id != 616662810205749288):
+        await interaction.response.send_message("Only users with permission can start voting.", ephemeral=True)
+        return
+
     if channel_id not in data or data[channel_id]["round"] is None:
         await interaction.response.send_message("No active round in this channel.", ephemeral=True)
         return
@@ -277,6 +289,10 @@ async def vote(interaction: discord.Interaction, number: int, amount: int = 1):
 async def end_round(interaction: discord.Interaction):
     data = load_data()
     channel_id = str(interaction.channel_id)
+
+    if (interaction.user.guild_permissions.manage_messages == False) and (interaction.user.id != 616662810205749288):
+        await interaction.response.send_message("Only users with permission can end the round.", ephemeral=True)
+        return
 
     if channel_id not in data or data[channel_id]["round"] is None:
         await interaction.response.send_message("No active round in this channel.", ephemeral=True)
