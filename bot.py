@@ -363,6 +363,31 @@ async def end_round(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
     await interaction.channel.send(embed=endembed)
 
+@bot.tree.command(description="Check if all players have submitted a song for the current round")
+async def check_submissions(interaction: discord.Interaction):
+    data = load_data()
+    channel_id = str(interaction.channel_id)
+
+    if channel_id not in data or data[channel_id]["round"] is None:
+        await interaction.response.send_message("No active round in this channel.", ephemeral=True)
+        return
+
+    round_data = data[channel_id]["round"]
+    if round_data.get("phase") != "submission":
+        await interaction.response.send_message("This command can only be used during the submission phase.", ephemeral=True)
+        return
+
+    league = data[channel_id]
+    players = set(league["players"])
+    submissions = set(round_data["submissions"].keys())
+    missing = players - submissions
+    if not missing:
+        await interaction.channel.send("All players have submitted a song for this round!")
+        await interaction.response.send_message("Everyone has submitted!", ephemeral=True)
+    else:
+        mentions = [f"<@{uid}>" for uid in missing]
+        await interaction.response.send_message(f"Waiting on submissions from: {', '.join(mentions)}", ephemeral=True)
+
 
 @bot.tree.command(description="Show current league standings")
 async def standings(interaction: discord.Interaction):
