@@ -23,14 +23,17 @@ def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=2)
 
-def fetch_youtube_title(url: str) -> str:
+def fetch_youtube_info(url: str) -> dict:
     ydl_opts = {"quiet": False, "skip_download": True}
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
             info = ydl.extract_info(url, download=False)
-            return info.get("title", "Unknown Title")
+            return {
+                "title": info.get("title", "Unknown Title"),
+                "thumbnail": info.get("thumbnail", None)
+            }
         except Exception:
-            return "Unknown Title"
+            return {"title": "Unknown Title", "thumbnail": None}
 
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -142,10 +145,12 @@ async def submit(interaction: discord.Interaction, url: str):
     await interaction.response.defer(thinking=True, ephemeral=True)
 
     loop = asyncio.get_running_loop()
-    title = await loop.run_in_executor(None, fetch_youtube_title, url)
+    yt_info = await loop.run_in_executor(None, fetch_youtube_info, url)
+    title = yt_info["title"]
+    thumbnail = yt_info["thumbnail"]
 
     data = load_data()
-    data[channel_id]["round"]["submissions"][str(interaction.user.id)] = {"url": url, "title": title}
+    data[channel_id]["round"]["submissions"][str(interaction.user.id)] = {"url": url, "title": title, "thumbnail": thumbnail}
     save_data(data)
 
     await interaction.edit_original_response(content=f"Submission received: [{title}]({url})")
@@ -169,20 +174,31 @@ async def show_submissions(interaction: discord.Interaction):
         await interaction.response.send_message("No submissions yet.")
         return
 
-    embed = discord.Embed(
-        title=f"Submissions for {round_data['theme']}",
-        color=discord.Color.blue()
-    )
+    embeds = []
     for i, (player_id, sub) in enumerate(submissions.items(), start=1):
         if isinstance(sub, dict):
             url = sub.get("url", "")
             title = sub.get("title", url)
+            thumbnail = sub.get("thumbnail")
         else:
             url = sub
             title = url
-        embed.add_field(name=f"{i}.", value=f"[{title}]({url})", inline=False)
+            thumbnail = None
+        embed = discord.Embed(
+            title=f"{i}. {title}",
+            url=url,
+            color=discord.Color.blue()
+        )
+        if thumbnail:
+            embed.set_image(url=thumbnail)
+        embeds.append(embed)
 
-    await interaction.response.send_message(embed=embed)
+    for i in range(0, len(embeds), 10):
+        batch = embeds[i:i+10]
+        if i == 0:
+            await interaction.response.send_message(embeds=batch)
+        else:
+            await interaction.followup.send(embeds=batch)
 
 # Add command to move round to voting phase
 @bot.tree.command(description="Move the current round to voting phase")
