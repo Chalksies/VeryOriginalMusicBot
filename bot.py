@@ -388,6 +388,9 @@ async def check_submissions(interaction: discord.Interaction):
         mentions = [f"<@{uid}>" for uid in missing]
         await interaction.response.send_message(f"Waiting on submissions from: {', '.join(mentions)}", ephemeral=True)
 
+@bot.tree.command(description="Give Melodi a hug!")
+async def hug(interaction: discord.Interaction):
+    await interaction.response.send_message(f"Aww, thanks for the hug {interaction.user.mention}!!! I appreciate it :3")
 
 @bot.tree.command(description="Show current league standings")
 async def standings(interaction: discord.Interaction):
