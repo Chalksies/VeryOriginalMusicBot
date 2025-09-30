@@ -223,7 +223,7 @@ async def start_voting(interaction: discord.Interaction):
 
     round_data["phase"] = "voting"
     save_data(data)
-    await interaction.response.send_message(f"Voting phase started! Use /show_submissions to view and /vote to vote.\n Total votes per player: {votes_per_player}")
+    await interaction.response.send_message(f"Voting phase started! Use /show_submissions to view and /vote to vote.\nTotal votes per player: {votes_per_player}")
 
 @bot.tree.command(description=f"Vote for a submission (you have multiple votes per round)")
 @app_commands.describe(number="The submission number you want to vote for", amount="The number of votes to allocate to this submission")
