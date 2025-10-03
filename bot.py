@@ -9,11 +9,14 @@ from filelock import FileLock
 import asyncio
 import yt_dlp
 import random
+import io
+from discord.ui import View, Button, Select
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DATA_FILE = os.getenv("DATA_FILE")
-RESPONSIBLE_PERSON = os.getenv("RESPONSIBLE_PERSON")
+RESPONSIBLE_PERSON = int(os.getenv("RESPONSIBLE_PERSON"))
+SUBS_PER_PAGE = 15
 
 def load_data():
     lock = FileLock(DATA_FILE + ".lock")
@@ -44,6 +47,92 @@ def fetch_youtube_info(url: str) -> dict:
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+class SubmissionsView(View):
+    def __init__(self, submissions, theme, requester_id=None):
+        super().__init__(timeout=180)  # disable after 3 minutes of inactivity
+        self.submissions = submissions
+        self.theme = theme
+        self.page = 0
+        self.max_page = (len(submissions) - 1) // SUBS_PER_PAGE
+        self.requester_id = requester_id 
+
+        if self.max_page > 0: 
+            options = []
+            for i in range(self.max_page + 1):
+                options.append(discord.SelectOption(label=f"Page {i+1}", value=str(i)))
+            self.page_select.options = options
+
+        self.update_button_states()
+
+    def update_button_states(self):
+        if self.max_page <= 0:
+            for child in self.children:
+                if isinstance(child, Button):
+                    child.disabled = True
+            return
+
+        for child in self.children:
+            if isinstance(child, Button):
+                if child.custom_id == "prev_button":
+                    child.disabled = self.page == 0
+                elif child.custom_id == "next_button":
+                    child.disabled = self.page == self.max_page
+
+    def build_embed(self):
+        start = self.page * SUBS_PER_PAGE
+        end = start + SUBS_PER_PAGE
+        chunk = self.submissions[start:end]
+
+        lines = []
+        for i, sub in enumerate(chunk, start=start + 1):
+            url = sub.get("url", "")
+            title = sub.get("title", url)
+            if len(title) > 100:
+                title = title[:97] + "..."
+            lines.append(f"{i}. [{title}]({url})")
+
+        embed = discord.Embed(
+            title=f"🎶 Submissions for {self.theme} (Page {self.page+1}/{self.max_page+1})",
+            description="\n".join(lines) or "No submissions",
+            color=discord.Color.blue()
+        )
+        return embed
+
+    def check_owner(self, interaction: discord.Interaction) -> bool:
+        if self.requester_id and interaction.user.id != self.requester_id:
+            # restrict to only the original user if desired
+            return False
+        return True
+
+    @discord.ui.button(label="<<< Prev", style=discord.ButtonStyle.secondary, custom_id="prev_button")
+    async def prev_button(self, interaction: discord.Interaction, button: Button):
+        if not self.check_owner(interaction):
+            await interaction.response.send_message("You can't control this pagination.", ephemeral=True)
+            return
+        if self.page > 0:
+            self.page -= 1
+        self.update_button_states()
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+
+    @discord.ui.button(label=">>> Next", style=discord.ButtonStyle.secondary, custom_id="next_button")
+    async def next_button(self, interaction: discord.Interaction, button: Button):
+        if not self.check_owner(interaction):
+            await interaction.response.send_message("You can't control this pagination.", ephemeral=True)
+            return
+        if self.page < self.max_page:
+            self.page += 1
+        self.update_button_states()
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+
+    @discord.ui.select(placeholder="Jump to page...", custom_id="page_select")
+    async def page_select(self, interaction: discord.Interaction, select: Select):
+        if not self.check_owner(interaction):
+            await interaction.response.send_message("You can't control this pagination.", ephemeral=True)
+            return
+        self.page = int(select.values[0])
+        self.update_button_states()
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
 
 @bot.event
 async def on_ready():
@@ -208,42 +297,57 @@ async def show_submissions(interaction: discord.Interaction):
         await interaction.response.send_message("Submissions can only be viewed during the voting phase.", ephemeral=True)
         return
 
-    submissions = round_data["submissions"]
+    submissions = list(round_data["submissions"].values())
     if not submissions:
         await interaction.response.send_message("No submissions yet.")
         return
 
-    embeds = []
-    for i, (player_id, sub) in enumerate(submissions.items(), start=1):
-        if isinstance(sub, dict):
-            url = sub.get("url", "")
-            title = sub.get("title", url)
-            thumbnail = sub.get("thumbnail")
-        else:
-            url = sub
-            title = url
-            thumbnail = None
-        embed = discord.Embed(
-            title=f"{i}. {title}",
-            url=url,
-            color=discord.Color.blue()
-        )
-        if thumbnail:
-            embed.set_image(url=thumbnail)
-        embeds.append(embed)
+    view = SubmissionsView(submissions, round_data["theme"], requester_id=interaction.user.id)
+    await interaction.response.send_message(embed=view.build_embed(), view=view)
 
-    for i in range(0, len(embeds), 10):
-        batch = embeds[i:i+10]
-        if i == 0:
-            await interaction.response.send_message(embeds=batch)
-        else:
-            await interaction.followup.send(embeds=batch)
 
-@bot.tree.command(description="Move the current round to voting phase")
-async def start_voting(interaction: discord.Interaction):
+@bot.tree.command(description="Show details for a specific submission")
+@app_commands.describe(number="The submission number")
+async def submission_details(interaction: discord.Interaction, number: int):
     data = load_data()
     channel_id = str(interaction.channel_id)
-    votes_per_player = data[channel_id]["votes_per_player"]
+
+    if channel_id not in data or data[channel_id]["round"] is None:
+        await interaction.response.send_message("No active round in this channel.", ephemeral=True)
+        return
+    
+    round_data = data[channel_id]["round"]
+    
+    if round_data.get("phase") != "voting":
+        await interaction.response.send_message("Submissions can only be viewed during the voting phase.", ephemeral=True)
+        return
+
+    submissions = list(round_data["submissions"].values())
+
+    if number < 1 or number > len(submissions):
+        await interaction.response.send_message("Invalid submission number.", ephemeral=True)
+        return
+
+    sub = submissions[number - 1]
+    title = sub.get("title", "Unknown Title")
+    url = sub.get("url", "")
+    thumbnail = sub.get("thumbnail")
+
+    embed = discord.Embed(
+        title=title,
+        url=url,
+        color=discord.Color.green()
+    )
+    if thumbnail:
+        embed.set_image(url=thumbnail)
+
+    await interaction.response.send_message(embed=embed)
+
+
+@bot.tree.command(description="Move the current round to voting phase")
+async def start_voting(interaction  : discord.Interaction):
+    data = load_data()
+    channel_id = str(interaction.channel_id)
 
     if (interaction.user.guild_permissions.manage_messages == False) and (interaction.user.id != RESPONSIBLE_PERSON):
         await interaction.response.send_message("Only users with permission can start voting.", ephemeral=True)
@@ -262,6 +366,7 @@ async def start_voting(interaction: discord.Interaction):
         await interaction.response.send_message("No submissions to vote on!", ephemeral=True)
         return
 
+    votes_per_player = data[channel_id]["votes_per_player"]
     round_data["phase"] = "voting"
     save_data(data)
     await interaction.response.send_message(f"Voting phase started! Use /show_submissions to view and /vote to vote.\nTotal votes per player: {votes_per_player}")
@@ -272,7 +377,6 @@ async def vote(interaction: discord.Interaction, number: int, amount: int = 1):
     data = load_data()
     channel_id = str(interaction.channel_id)
     player_id = str(interaction.user.id)
-    votes_per_player = data[channel_id]["votes_per_player"]
 
     if channel_id not in data or data[channel_id]["round"] is None:
         await interaction.response.send_message("No active round in this channel.", ephemeral=True)
@@ -287,6 +391,8 @@ async def vote(interaction: discord.Interaction, number: int, amount: int = 1):
     if number < 1 or number > len(submissions):
         await interaction.response.send_message("Invalid submission number.", ephemeral=True)
         return
+    
+    votes_per_player = data[channel_id]["votes_per_player"]
 
     if amount < 1 or amount > votes_per_player:
         await interaction.response.send_message(f"You can only allocate between 1 and {votes_per_player} votes per submission.", ephemeral=True)
@@ -328,33 +434,76 @@ async def end_round(interaction: discord.Interaction):
         return
 
     league = data[channel_id]
-
-    votes = league["round"]["votes"]
+    round_data = league["round"]
+    votes = round_data["votes"]
+    submissions = round_data["submissions"]
     tally = {}
+
     for voter, vote_dict in votes.items():
         for target, count in vote_dict.items():
             tally[target] = tally.get(target, 0) + count
 
-    for player_id, count in tally.items():
-        league["scores"][player_id] = league["scores"].get(player_id, 0) + count
+    results_sorted = sorted(tally.items(), key=lambda x: x[1], reverse=True)
+    full_results_lines = ["Rank,Submitter,Song Title,Votes,URL\n"]
+    
 
-    embed = discord.Embed(
-        title=f"Results for Round {league['current_round']} ({league['round']['theme']})",
-        color=discord.Color.red()
-    )
-    for player_id, count in tally.items():
+    top_results_for_embed = []
+    
+    for rank, (player_id, count) in enumerate(results_sorted, start=1):
         member = interaction.guild.get_member(int(player_id))
         name = member.display_name if member else f"User {player_id}"
-        embed.add_field(name=name, value=f"{count} votes", inline=False)
+        
+        submission = submissions.get(player_id, {})
+        title = submission.get("title", "Unknown Title").replace(",", "") 
+        url = submission.get("url", "#")
+        
+        full_results_lines.append(f"{rank},{name},{title},{count},{url}\n")
 
+        if rank <= 3:
+            top_results_for_embed.append({"rank": rank, "name": name, "title": title, "url": url, "votes": count})
+
+    results_content = "".join(full_results_lines)
+    file_name = f"Round_{league['current_round']}_Results.csv"
+    
+    file_buffer = io.BytesIO(results_content.encode('utf-8'))
+    discord_file = discord.File(fp=file_buffer, filename=file_name)
+
+    del full_results_lines
+    del results_content
+
+    for player_id, count in tally.items():
+        league["scores"][player_id] = league["scores"].get(player_id, 0) + count
+    
+    embed = discord.Embed(
+        title=f"🎶 Final Tally for Round {league['current_round']} ({round_data['theme']})",
+        description="The top 3 submissions are below. Find the full results attached!",
+        color=discord.Color.red()
+    )
+
+    for item in top_results_for_embed:
+        if item["rank"] == 1:
+            prefix = "🥇"
+        elif item["rank"] == 2:
+            prefix = "🥈"
+        else:
+            prefix = "🥉"
+
+        embed.add_field(
+            name=f"{prefix} #{item['rank']} - {item['name']} ({item['votes']} votes)",
+            value=f"Song: **[{item['title']}]({item['url']})**",
+            inline=False
+        )
+    
     standings = sorted(league["scores"].items(), key=lambda x: x[1], reverse=True)
     standings_text = "\n".join(
         f"{interaction.guild.get_member(int(pid)).display_name if interaction.guild.get_member(int(pid)) else pid}: {pts} pts"
         for pid, pts in standings
     )
-    embed.add_field(name="League Standings", value=standings_text or "No points yet", inline=False)
+    embed.add_field(name="\n\nCurrent League Standings", value=standings_text or "No points yet", inline=False)
 
-    league["round"] = None
+
+    endembed = None
+    league["round"] = None 
 
     if league["current_round"] >= league["max_rounds"]:
         top_score = standings[0][1] if standings else 0
@@ -389,8 +538,9 @@ async def end_round(interaction: discord.Interaction):
         del data[channel_id]
 
     save_data(data)
-    await interaction.response.send_message(embed=embed)
-    await interaction.channel.send(embed=endembed)
+    await interaction.response.send_message(embed=embed, file=discord_file)
+    if endembed:
+        await interaction.channel.send(embed=endembed)
 
 @bot.tree.command(description="Check if all players have submitted a song for the current round")
 async def check_submissions(interaction: discord.Interaction):
