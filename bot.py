@@ -5,6 +5,7 @@ import json
 import os
 from dotenv import load_dotenv
 from datetime import datetime
+from filelock import FileLock
 import asyncio
 import yt_dlp
 
@@ -14,14 +15,18 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 DATA_FILE = os.getenv("DATA_FILE")
 
 def load_data():
-    if not os.path.exists(DATA_FILE):
-        return {}
-    with open(DATA_FILE, "r") as f:
-        return json.load(f)
+    lock = FileLock(DATA_FILE + ".lock")
+    with lock:
+        if not os.path.exists(DATA_FILE):
+            return {}
+        with open(DATA_FILE, "r") as f:
+            return json.load(f)
 
 def save_data(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+    lock = FileLock(DATA_FILE + ".lock")
+    with lock:
+        with open(DATA_FILE, "w") as f:
+            json.dump(data, f, indent=2)
 
 def fetch_youtube_info(url: str) -> dict:
     ydl_opts = {"quiet": False, "skip_download": True}
