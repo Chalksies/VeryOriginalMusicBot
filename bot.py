@@ -70,8 +70,6 @@ async def update_listening_status():
             await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name="the silence..."))
         await asyncio.sleep(300)  # update every 5 minutes
 
-bot.loop.create_task(update_listening_status())
-
 @bot.tree.command(description="Create a new league in this channel")
 @app_commands.describe(rounds="Number of rounds in this league", votes_per_player="Number of votes each player can cast per round")
 async def create_league(interaction: discord.Interaction, rounds: int, votes_per_player: int):
@@ -474,4 +472,5 @@ async def remove_submission(interaction: discord.Interaction, user: discord.Memb
     save_data(data)
     await interaction.response.send_message(f"Submission from {user.display_name} has been removed.", ephemeral=True)
 
+bot.loop.create_task(update_listening_status())
 bot.run(BOT_TOKEN)
