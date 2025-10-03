@@ -67,10 +67,11 @@ async def update_listening_status():
                             all_submissions.append(title)
         if all_submissions:
             song = random.choice(all_submissions)
-            await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name=song))
+            status_text = f"listening to {song}"
         else:
-            await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name="the silence..."))
-        await asyncio.sleep(300)  # update every 5 minutes
+            status_text = "listening to the silence..."
+        await bot.change_presence(activity=discord.CustomActivity(name=status_text))
+        await asyncio.sleep(300)
 
 @bot.tree.command(description="Create a new league in this channel")
 @app_commands.describe(rounds="Number of rounds in this league", votes_per_player="Number of votes each player can cast per round")
