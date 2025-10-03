@@ -49,6 +49,8 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 async def on_ready():
     await bot.tree.sync()
     print(f"Logged in as {bot.user}")
+    if not hasattr(bot, "listening_task"):
+        bot.listening_task = asyncio.create_task(update_listening_status())
 
 async def update_listening_status():
     await bot.wait_until_ready()
@@ -472,5 +474,4 @@ async def remove_submission(interaction: discord.Interaction, user: discord.Memb
     save_data(data)
     await interaction.response.send_message(f"Submission from {user.display_name} has been removed.", ephemeral=True)
 
-bot.loop.create_task(update_listening_status())
 bot.run(BOT_TOKEN)
