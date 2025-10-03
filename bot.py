@@ -8,11 +8,12 @@ from datetime import datetime
 from filelock import FileLock
 import asyncio
 import yt_dlp
+import random
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-
 DATA_FILE = os.getenv("DATA_FILE")
+RESPONSIBLE_PERSON = os.getenv("RESPONSIBLE_PERSON")
 
 def load_data():
     lock = FileLock(DATA_FILE + ".lock")
@@ -49,13 +50,35 @@ async def on_ready():
     await bot.tree.sync()
     print(f"Logged in as {bot.user}")
 
+async def update_listening_status():
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        data = load_data()
+        all_submissions = []
+        for league in data.values():
+            if isinstance(league, dict) and league.get("round"):
+                submissions = league["round"].get("submissions", {})
+                for sub in submissions.values():
+                    if isinstance(sub, dict):
+                        title = sub.get("title")
+                        if title and title != "Unknown Title":
+                            all_submissions.append(title)
+        if all_submissions:
+            song = random.choice(all_submissions)
+            await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name=song))
+        else:
+            await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name="the silence..."))
+        await asyncio.sleep(300)  # update every 5 minutes
+
+bot.loop.create_task(update_listening_status())
+
 @bot.tree.command(description="Create a new league in this channel")
 @app_commands.describe(rounds="Number of rounds in this league", votes_per_player="Number of votes each player can cast per round")
 async def create_league(interaction: discord.Interaction, rounds: int, votes_per_player: int):
     data = load_data()
     channel_id = str(interaction.channel_id)
 
-    if (interaction.user.guild_permissions.manage_messages == False) and (interaction.user.id != 616662810205749288):
+    if (interaction.user.guild_permissions.manage_messages == False) and (interaction.user.id != RESPONSIBLE_PERSON):
         await interaction.response.send_message("Only users with permission can create a league.", ephemeral=True)
         return
 
@@ -104,7 +127,7 @@ async def start_round(interaction: discord.Interaction, theme: str):
     data = load_data()
     channel_id = str(interaction.channel_id)
 
-    if (interaction.user.guild_permissions.manage_messages == False) and (interaction.user.id != 616662810205749288):
+    if (interaction.user.guild_permissions.manage_messages == False) and (interaction.user.id != RESPONSIBLE_PERSON):
         await interaction.response.send_message("Only users with permission can start a round.", ephemeral=True)
         return
 
@@ -221,7 +244,7 @@ async def start_voting(interaction: discord.Interaction):
     channel_id = str(interaction.channel_id)
     votes_per_player = data[channel_id]["votes_per_player"]
 
-    if (interaction.user.guild_permissions.manage_messages == False) and (interaction.user.id != 616662810205749288):
+    if (interaction.user.guild_permissions.manage_messages == False) and (interaction.user.id != RESPONSIBLE_PERSON):
         await interaction.response.send_message("Only users with permission can start voting.", ephemeral=True)
         return
 
@@ -295,7 +318,7 @@ async def end_round(interaction: discord.Interaction):
     data = load_data()
     channel_id = str(interaction.channel_id)
 
-    if (interaction.user.guild_permissions.manage_messages == False) and (interaction.user.id != 616662810205749288):
+    if (interaction.user.guild_permissions.manage_messages == False) and (interaction.user.id != RESPONSIBLE_PERSON):
         await interaction.response.send_message("Only users with permission can end the round.", ephemeral=True)
         return
 
@@ -426,5 +449,29 @@ async def standings(interaction: discord.Interaction):
         embed.add_field(name=f"#{rank} {name}", value=f"{points} pts", inline=False)
 
     await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(description="Remove a player's submission from the current round.")
+async def remove_submission(interaction: discord.Interaction, user: discord.Member):
+    data = load_data()
+    channel_id = str(interaction.channel_id)
+
+    if (interaction.user.guild_permissions.manage_messages == False) and (interaction.user.id != RESPONSIBLE_PERSON):
+        await interaction.response.send_message("You are not authorized to do this.", ephemeral=True)
+        return
+
+    if channel_id not in data or data[channel_id]["round"] is None:
+        await interaction.response.send_message("No active round in this channel.", ephemeral=True)
+        return
+
+    round_data = data[channel_id]["round"]
+    player_id = str(user.id)
+
+    if player_id not in round_data["submissions"]:
+        await interaction.response.send_message(f"{user.display_name} has not submitted a song this round.", ephemeral=True)
+        return
+
+    del round_data["submissions"][player_id]
+    save_data(data)
+    await interaction.response.send_message(f"Submission from {user.display_name} has been removed.", ephemeral=True)
 
 bot.run(BOT_TOKEN)
