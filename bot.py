@@ -50,28 +50,27 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 class SubmissionsView(View):
     def __init__(self, submissions, theme, requester_id=None):
-        super().__init__(timeout=180)  # disable after 3 minutes of inactivity
+        super().__init__(timeout=180)
         self.submissions = submissions
         self.theme = theme
         self.page = 0
         self.max_page = (len(submissions) - 1) // SUBS_PER_PAGE
         self.requester_id = requester_id 
 
+        # Logic: Only add options if there are multiple pages.
         if self.max_page > 0: 
             options = []
             for i in range(self.max_page + 1):
                 options.append(discord.SelectOption(label=f"Page {i+1}", value=str(i)))
             self.page_select.options = options
-
-        self.update_button_states()
+            self.update_button_states() # Set initial button state
+        else:
+            # FIX: If there's only 1 page, remove all navigation controls (Dropdown & Buttons)
+            self.clear_items()
 
     def update_button_states(self):
-        if self.max_page <= 0:
-            for child in self.children:
-                if isinstance(child, Button):
-                    child.disabled = True
-            return
-
+        # We don't need to check max_page <= 0 here anymore because 
+        # clear_items() handles that case by removing everything.
         for child in self.children:
             if isinstance(child, Button):
                 if child.custom_id == "prev_button":
@@ -101,7 +100,6 @@ class SubmissionsView(View):
 
     def check_owner(self, interaction: discord.Interaction) -> bool:
         if self.requester_id and interaction.user.id != self.requester_id:
-            # restrict to only the original user if desired
             return False
         return True
 
@@ -133,6 +131,7 @@ class SubmissionsView(View):
         self.page = int(select.values[0])
         self.update_button_states()
         await interaction.response.edit_message(embed=self.build_embed(), view=self)
+
 
 @bot.event
 async def on_ready():
