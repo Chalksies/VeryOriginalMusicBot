@@ -57,7 +57,6 @@ class SubmissionsView(View):
         self.max_page = (len(submissions) - 1) // SUBS_PER_PAGE
         self.requester_id = requester_id 
 
-        # Logic: Only add options if there are multiple pages.
         if self.max_page > 0: 
             options = []
             for i in range(self.max_page + 1):
@@ -65,7 +64,6 @@ class SubmissionsView(View):
             self.page_select.options = options
             self.update_button_states() # Set initial button state
         else:
-            # FIX: If there's only 1 page, remove all navigation controls (Dropdown & Buttons)
             self.clear_items()
 
     def update_button_states(self):
