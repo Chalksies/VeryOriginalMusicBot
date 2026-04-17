@@ -1,3 +1,4 @@
 .env
-.musicvenv
+.venv
+__pycache__
 leagues.json
