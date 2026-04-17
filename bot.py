@@ -220,7 +220,7 @@ class SubmissionsView(View):
 
         description = "\n".join(lines) or "No submissions"
         if self.playlist_url:
-            description += f"\n\n🎵 **[Listen to full playlist]({self.playlist_url})**"
+            description += f"\n\n**[Listen to full playlist]({self.playlist_url})**"
 
         embed = discord.Embed(
             title=f"🎶 Submissions for {self.theme} (Page {self.page+1}/{self.max_page+1})",
