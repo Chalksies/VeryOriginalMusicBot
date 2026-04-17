@@ -171,6 +171,7 @@ async def add_video_to_playlist(playlist_id: str, video_id: str) -> dict:
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members = True
 bot = commands.Bot(intents=intents)
 
 class SubmissionsView(View):
