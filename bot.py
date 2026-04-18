@@ -172,7 +172,8 @@ async def add_video_to_playlist(playlist_id: str, video_id: str) -> dict:
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
-bot = commands.Bot(intents=intents)
+client = discord.Client(intents=intents)
+tree = app_commands.CommandTree(client)
 
 class SubmissionsView(View):
     def __init__(self, submissions, theme, requester_id=None, playlist_url=None):
@@ -265,16 +266,16 @@ class SubmissionsView(View):
         await interaction.response.edit_message(embed=self.build_embed(), view=self)
 
 
-@bot.event
+@client.event
 async def on_ready():
-    await bot.tree.sync()
-    print(f"Logged in as {bot.user}")
-    if not hasattr(bot, "listening_task"):
-        bot.listening_task = asyncio.create_task(update_listening_status())
+    await tree.sync()
+    print(f"Logged in as {client.user}")
+    if not hasattr(client, "listening_task"):
+        client.listening_task = asyncio.create_task(update_listening_status())
 
 async def update_listening_status():
-    await bot.wait_until_ready()
-    while not bot.is_closed():
+    await client.wait_until_ready()
+    while not client.is_closed():
         data = load_data()
         all_submissions = []
         for league in data.values():
@@ -290,10 +291,10 @@ async def update_listening_status():
             status_text = f"listening to {song}"
         else:
             status_text = "listening to the silence..."
-        await bot.change_presence(activity=discord.CustomActivity(name=status_text))
+        await client.change_presence(activity=discord.CustomActivity(name=status_text))
         await asyncio.sleep(300)
 
-@bot.tree.command(description="Create a new league in this channel")
+@client.tree.command(description="Create a new league in this channel")
 @app_commands.describe(rounds="Number of rounds in this league", votes_per_player="Number of votes each player can cast per round", max_players="Maximum number of players (0 = unlimited)")
 async def create_league(interaction: discord.Interaction, rounds: int, votes_per_player: int, max_players: int = 15):
     data = load_data()
@@ -329,7 +330,7 @@ async def create_league(interaction: discord.Interaction, rounds: int, votes_per
     max_text = f" (Max {max_players} players)" if max_players > 0 else " (Unlimited players)"
     await interaction.response.send_message(f"New league created in this channel!{max_text}")
 
-@bot.tree.command(description="Join the league in this channel")
+@client.tree.command(description="Join the league in this channel")
 async def join_league(interaction: discord.Interaction):
     data = load_data()
     channel_id = str(interaction.channel_id)
@@ -356,7 +357,7 @@ async def join_league(interaction: discord.Interaction):
 
     await interaction.response.send_message(f"{interaction.user.mention} joined the league! ({current_players + 1}/{max_players if max_players > 0 else '∞'})")
 
-@bot.tree.command(description="Start a new round")
+@client.tree.command(description="Start a new round")
 @app_commands.describe(theme="Theme for this round")
 async def start_round(interaction: discord.Interaction, theme: str):
     data = load_data()
@@ -396,7 +397,7 @@ async def start_round(interaction: discord.Interaction, theme: str):
         f"**Round {league['current_round']}/{league['max_rounds']} started!** {role.mention}\n"
         f"**Theme:** {theme}\nUse `/submit <url>` to enter your song."
     )
-@bot.tree.command(description="Submit your song for the current round")
+@client.tree.command(description="Submit your song for the current round")
 @app_commands.describe(url="YouTube or YouTube Music link", content_warning="Content/trigger warning(s) (optional)")
 async def submit(interaction: discord.Interaction, url: str, content_warning: str = None):
     data = load_data()
@@ -453,7 +454,7 @@ async def submit(interaction: discord.Interaction, url: str, content_warning: st
     
     await interaction.edit_original_response(content=response_text)
 
-@bot.tree.command(description="Show all submissions for the current round")
+@client.tree.command(description="Show all submissions for the current round")
 async def show_submissions(interaction: discord.Interaction):
     data = load_data()
     channel_id = str(interaction.channel_id)
@@ -492,7 +493,7 @@ async def show_submissions(interaction: discord.Interaction):
             pass
 
 
-@bot.tree.command(description="Show details for a specific submission")
+@client.tree.command(description="Show details for a specific submission")
 @app_commands.describe(number="The submission number")
 async def submission_details(interaction: discord.Interaction, number: int):
     data = load_data()
@@ -535,7 +536,7 @@ async def submission_details(interaction: discord.Interaction, number: int):
     await interaction.response.send_message(embed=embed)
 
 
-@bot.tree.command(description="Move the current round to voting phase")
+@client.tree.command(description="Move the current round to voting phase")
 async def start_voting(interaction: discord.Interaction):
     data = load_data()
     channel_id = str(interaction.channel_id)
@@ -605,7 +606,7 @@ async def start_voting(interaction: discord.Interaction):
         f"Total votes per player: {votes_per_player}\n\n{role.mention}{playlist_text}"
     )
 
-@bot.tree.command(description=f"Vote for a submission (you have multiple votes per round)")
+@client.tree.command(description=f"Vote for a submission (you have multiple votes per round)")
 @app_commands.describe(number="The submission number you want to vote for", amount="The number of votes to allocate to this submission", comment="Optional comment about your vote")
 async def vote(interaction: discord.Interaction, number: int, amount: int = 1, comment: str = None):
     data = load_data()
@@ -674,7 +675,7 @@ async def vote(interaction: discord.Interaction, number: int, amount: int = 1, c
     comment_text = f" | Comment: {comment}" if comment else ""
     await interaction.response.send_message(f"You gave {amount} vote(s) to submission #{number}. You have {remaining} votes left this round.{comment_text}")
 
-@bot.tree.command(description="End the round and show results")
+@client.tree.command(description="End the round and show results")
 async def end_round(interaction: discord.Interaction):
     data = load_data()
     channel_id = str(interaction.channel_id)
@@ -796,7 +797,7 @@ async def end_round(interaction: discord.Interaction):
     if endembed:
         await interaction.channel.send(embed=endembed)
 
-@bot.tree.command(description="Check if all players have submitted a song for the current round")
+@client.tree.command(description="Check if all players have submitted a song for the current round")
 async def check_submissions(interaction: discord.Interaction):
     data = load_data()
     channel_id = str(interaction.channel_id)
@@ -821,7 +822,7 @@ async def check_submissions(interaction: discord.Interaction):
         mentions = [f"<@{uid}>" for uid in missing]
         await interaction.response.send_message(f"Waiting on submissions from: {', '.join(mentions)}", ephemeral=True)
 
-@bot.tree.command(description="Check who hasn't voted yet in the current round.")
+@client.tree.command(description="Check who hasn't voted yet in the current round.")
 async def check_votes(interaction: discord.Interaction):
     data = load_data()
     channel_id = str(interaction.channel_id)
@@ -875,11 +876,11 @@ async def check_votes(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@bot.tree.command(description="Give Melodi a hug!")
+@client.tree.command(description="Give Melodi a hug!")
 async def hug(interaction: discord.Interaction):
     await interaction.response.send_message(f"Aww, thanks for the hug {interaction.user.mention}!!! I appreciate it :3")
 
-@bot.tree.command(description="Make her speak.")
+@client.tree.command(description="Make her speak.")
 async def say(interaction: discord.Interaction, message: str, channel: discord.TextChannel = None, reply_to: str = None):
     
     if (interaction.user.id != RESPONSIBLE_PERSON):
@@ -902,7 +903,7 @@ async def say(interaction: discord.Interaction, message: str, channel: discord.T
     
     await interaction.response.send_message("Message sent!", ephemeral=True)
 
-@bot.tree.command(description="Show current league standings")
+@client.tree.command(description="Show current league standings")
 async def standings(interaction: discord.Interaction):
     data = load_data()
     channel_id = str(interaction.channel_id)
@@ -932,7 +933,7 @@ async def standings(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(description="Remove a player's submission from the current round.")
+@client.tree.command(description="Remove a player's submission from the current round.")
 async def remove_submission(interaction: discord.Interaction, user: discord.Member):
     data = load_data()
     channel_id = str(interaction.channel_id)
@@ -956,4 +957,4 @@ async def remove_submission(interaction: discord.Interaction, user: discord.Memb
     save_data(data)
     await interaction.response.send_message(f"Submission from {user.display_name} has been removed.", ephemeral=True)
 
-bot.run(BOT_TOKEN)
+client.run(BOT_TOKEN)
